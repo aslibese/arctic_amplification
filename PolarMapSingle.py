@@ -7,6 +7,9 @@ Created on Sat May 11 2024
 This driver script imports the plot_background function from PolarMapMultiple.py
 and contains the functions serving to plot temperature trend and amplification as polar maps using a single dataset.
 
+Code adapted from mikarant's GitHub repository: https://github.com/mikarant/arctic-amplification/tree/main
+Original code: https://github.com/mikarant/arctic-amplification/blob/main/fig1_manuscript.py
+
 @author: aslibese
 """
 
