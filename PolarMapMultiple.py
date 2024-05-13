@@ -7,6 +7,9 @@ Created on Sat May 11 2024
 This driver script contains the functions serving to create a customized background plot
 and multipanel plots of temperature trend and amplification as polar maps using multiple datasets.
 
+Code adapted from mikarant's GitHub repository: https://github.com/mikarant/arctic-amplification/tree/main
+Original code: https://github.com/mikarant/arctic-amplification/blob/main/fig1_manuscript.py
+
 @author: aslibese
 """
 
