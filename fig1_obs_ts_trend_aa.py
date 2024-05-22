@@ -30,10 +30,10 @@ gs = GridSpec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1], hspace=0.3, wspac
 
 # a) TOP: TIME SERIES
 # open the individual observational datasets
-BerkeleyEarth = xr.open_dataset('data/BerkeleyEarth_anom.nc')
-HadCRUT5 = xr.open_dataset('data/HadCRUT5_anom.nc')
-Gistemp = xr.open_dataset('data/gistemp_anom.nc')
-ERA5 = xr.open_dataset('data/new_era5_anom.nc')
+BerkeleyEarth = xr.open_dataset('data/obs/BerkeleyEarth_anom.nc')
+HadCRUT5 = xr.open_dataset('data/obs/HadCRUT5_anom.nc')
+Gistemp = xr.open_dataset('data/obs/gistemp_anom.nc')
+ERA5 = xr.open_dataset('data/obs/new_era5_anom.nc')
 
 obs_ds = [BerkeleyEarth, HadCRUT5, Gistemp, ERA5]
 
@@ -102,7 +102,7 @@ ax1.set_xlim(1950, 2025)
 
 # b) BOTTOM LEFT PLOT: ARCTIC TREND
 print("Plotting subplot (b)...\n")
-obs_ave_trend_masked = xr.open_dataset('data/obs_ave_trendMasked.nc')
+obs_ave_trend_masked = xr.open_dataset('data/obs/obs_ave_trendMasked.nc')
 
 ax2 = fig.add_subplot(gs[1, 0], projection=ccrs.NorthPolarStereo())
 # plot Arctic Temperature Trend using the average of four observational datasets
@@ -110,7 +110,7 @@ plot_average_ArcticTrend(obs_ave_trend_masked, arctic_lower, ax=ax2)
 
 # c) BOTTOM RIGHT: ARCTIC AMPLIFICATION
 print("Plotting subplot (c)...\n")
-obs_ave_aa = xr.open_dataset('data/obs_ave_aa.nc')
+obs_ave_aa = xr.open_dataset('data/obs/obs_ave_aa.nc')
 
 ax3 = fig.add_subplot(gs[1, 1], projection=ccrs.NorthPolarStereo())
 # plot Arctic Amplification using the average of four observational datasets
@@ -121,4 +121,4 @@ ax1.text(0, 1.1, 'a)', transform=ax1.transAxes, fontsize=16, fontweight='bold', 
 ax2.text(0, 1.1, 'b)', transform=ax2.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
 ax3.text(0, 1.1, 'c)', transform=ax3.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
 
-plt.savefig('figures/obs_combined_arcticTrend_aa.png', dpi=300)
+plt.savefig('figures/fig1_obs_timeseries_arcticTrend_aa.png', dpi=300)
