@@ -13,15 +13,21 @@ AHT and OHU in each grid cell following the method from Hanh et al. (2021) and s
 import xarray as xr
 from FeedbackUtilities import weighted_avg
 import os
+import argparse 
 
-# load the file containing the energetic contributions of feedbacks and change in AHT and OHU
-ds_path = 'data/CMIP6/MIROC6_feedbacks.nc'
-ds = xr.open_dataset(ds_path)
-# extract model name from the feedbacks path
-model = os.path.basename(ds_path).split('_')[0]
+parser = argparse.ArgumentParser(description='A program that requires two file names: feedbacks and Planck lambda.')
+parser.add_argument('feedbacks_filename', type=str, help='Name of the feedbacks data file')
+parser.add_argument('planck_lambda_filename', type=str, help='Name of the Planck lambda data file')
 
-# load Planck_lambda dataset
-ds_pl = xr.open_dataset('data/CMIP6/MIROC6_Planck_lambda.nc')
+args = parser.parse_args()
+
+print("Processing data file:", args.feedbacks_filename)
+
+# open the file containing the energetic contributions of feedbacks, change in AHT, OHU, ERF
+ds = xr.open_dataset(args.feedbacks_filename)
+
+# open the Planck_lambda dataset
+ds_pl = xr.open_dataset(args.planck_lambda_filename)
 # calculate global-mean Planck feedback (W m-2 K-1)
 global_avg_Planck = weighted_avg(ds_pl['Planck_lambda'])
 
@@ -70,7 +76,14 @@ variable_attrs = {
 for var_name, attrs in variable_attrs.items():
     warming_contr_ds[var_name].attrs.update(attrs)
 
-# save the dataset to a NetCDF file
-warming_contr_ds.to_netcdf(f'data/CMIP6/{model}_warming_contr.nc')
+# extract base filename
+base_filename = os.path.basename(args.feedbacks_filename)
 
-print(f"data/CMIP6/{model}_warming_contr.nc saved successfully.") 
+# extract model and ensemble names from the feedbacks path
+model = base_filename.split('_')[0]
+ensemble = base_filename.split('_')[1]
+
+# save the dataset to a NetCDF file
+warming_contr_ds.to_netcdf(f'data/CMIP6/{model}_{ensemble}_warming_contr.nc')
+
+print(f"data/CMIP6/{model}_{ensemble}_warming_contr.nc saved successfully.") 
