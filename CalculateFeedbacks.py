@@ -15,14 +15,18 @@ import xarray as xr
 import numpy as np
 import climkern as ck 
 import os
+import argparse # to handle command line arguments
 from FeedbackUtilities import make_clim, regress_against_ts, calculate_delta, weighted_avg
 
-# load the CMIP6 perturbed dataset
-ds_path = 'data/CMIP6/pert_MIROC6.nc'
-pert_ds = xr.open_dataset(ds_path)
+parser = argparse.ArgumentParser(description='A program that requires the file name of the CMIP6 perturbed dataset.')
+parser.add_argument('filename', type=str, help='Name of the data file')
 
-# extract model name from the path
-model = os.path.basename(ds_path).split('_')[1].split('.')[0]
+args = parser.parse_args()
+
+print("Processing data file:", args.filename)
+
+# open the CMIP6 perturbed dataset
+pert_ds = xr.open_dataset(args.filename)
 
 # select the variables needed for feedback calculations
 pert_ta = pert_ds['ta'] # air temperature at various pressure levels
@@ -397,7 +401,7 @@ cld_sw = cld_sw_lambda * delta_anom_ts
 
 
 # create a dataset to hold the energetic contributions of feedbacks (W m-2) and change in AHT and OHU
-output_ds = xr.Dataset({
+feedbacks_ds = xr.Dataset({
     'LR': LR,
     'Planck': Planck,
     'q_lw': q_lw,
@@ -425,14 +429,21 @@ variable_attrs = {
     'ERF_sw': {'long_name': "SW effective radiative forcing", 'standard_name': "effective_radiative_forcing_sw", 'units': "W m-2"},
 }
 for var_name, attrs in variable_attrs.items():
-    output_ds[var_name].attrs.update(attrs)
+    feedbacks_ds[var_name].attrs.update(attrs)
 
-# save the output dataset and Planck_lambda as NetCDF files
-output_ds.to_netcdf(f'data/CMIP6/{model}_feedbacks.nc') # (W m-2)
-print(f"data/CMIP6/{model}_feedbacks.nc saved successfully.")
+# extract base filename
+base_filename = os.path.basename(args.filename)
 
-PL_da.to_netcdf(f'data/CMIP6/{model}_Planck_lambda.nc') # (W m-2 K-1)
-print(f"data/CMIP6/{model}_Planck_lambda.nc saved successfully.")
+# extract model and ensemble names from the path
+model = base_filename.split('_')[0]
+ensemble = base_filename.split('_')[1]
+
+# save the datasets as NetCDF files
+feedbacks_ds.to_netcdf(f'data/CMIP6/{model}_{ensemble}_feedbacks.nc') # (W m-2)
+print(f"data/CMIP6/{model}_{ensemble}_feedbacks.nc saved successfully.")
+
+PL_da.to_netcdf(f'data/CMIP6/{model}_{ensemble}_Planck_lambda.nc') # (W m-2 K-1)
+print(f"data/CMIP6/{model}_{ensemble}_Planck_lambda.nc saved successfully.")
 
 
 
