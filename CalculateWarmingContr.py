@@ -31,7 +31,7 @@ ds_pl = xr.open_dataset(args.planck_lambda_filename)
 # calculate global-mean Planck feedback (W m-2 K-1)
 global_avg_Planck = weighted_avg(ds_pl['Planck_lambda'])
 
-print(f'global average Planck: {global_avg_Planck}')
+print(f'global average Planck: {global_avg_Planck.values}')
 
 # calculate warming contributions (K) in each grid cell
 LR_warming_contr = ds['LR'] / abs(global_avg_Planck)
