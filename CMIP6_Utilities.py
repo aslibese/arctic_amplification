@@ -1,5 +1,6 @@
 import pandas as pd
 import xarray as xr
+import numpy as np
 import gcsfs
 import os
 import warnings
@@ -35,7 +36,8 @@ def open_concat_datasets(model, experiment, ensemble, variables):
         if url:
             ds = open_dataset(fs, url)
             datasets.append(ds)
-    combined_ds = xr.merge(datasets)
+    # combined_ds = xr.merge(datasets)
+    combined_ds = xr.merge(datasets, compat='override')
     return combined_ds
 
 # function to use CDO for vertical interpolation
@@ -53,3 +55,9 @@ def cdo_bilinear_regridding(input_file, output_file):
 def cdo_conservative_regridding(input_file, output_file):
     command = f'cdo remapcon,target_grid.txt {input_file} {output_file}'
     return os.system(command)
+
+# function to calculate the tropopause pressure at different latitudes using the method described in the ClimKern package:
+# tropopause height of 10,000 Pa at the equator, descending with the cosine of latitude to 30,000 Pa at the poles
+def make_tropo(da):
+    p_trop = (3e4 - 2e4 * np.cos(np.deg2rad(da.lat))).broadcast_like(da)
+    return p_trop
