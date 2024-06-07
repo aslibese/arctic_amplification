@@ -91,7 +91,6 @@ for year in years:
     pert_ps_year = pert_ps.where(pert_ps['time'].dt.year == year, drop=True)
     pert_trop_year = pert_trop.where(pert_trop['time'].dt.year == year, drop=True)
     pert_q_year = pert_q.where(pert_q['time'].dt.year == year, drop=True)
-    pert_ps_year = pert_ps.where(pert_ps['time'].dt.year == year, drop=True)
 
     pert_rsus_year = pert_rsus.where(pert_rsus['time'].dt.year == year, drop=True)
     pert_rsds_year = pert_rsds.where(pert_rsds['time'].dt.year == year, drop=True)
