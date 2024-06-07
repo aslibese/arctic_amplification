@@ -1,9 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Created on Sun Jun 2 2024
+
+This utilities script contains the functions used in the DownloadRegridCMIP6.py and AddVariablesCMIP6.py scripts.
+
+@author: aslibese
+"""
+
 import pandas as pd
 import xarray as xr
 import numpy as np
+from scipy.interpolate import griddata
 import gcsfs
 import os
 import warnings
+import concurrent.futures
+import dask.array as da
 warnings.filterwarnings("ignore", message="Converting a CFTimeIndex with dates from a non-standard calendar")
 
 # initialize Google Cloud Storage file system
@@ -36,16 +50,33 @@ def open_concat_datasets(model, experiment, ensemble, variables):
         if url:
             ds = open_dataset(fs, url)
             datasets.append(ds)
-    # combined_ds = xr.merge(datasets)
-    combined_ds = xr.merge(datasets, compat='override')
+    try:
+        combined_ds = xr.merge(datasets)  # try standard merge first
+
+    # some models have conflicts in 'bnds' across different experiments (historical and ssp585)
+    except xr.MergeError as e:
+        if 'conflicting values for variable' in str(e):
+            print("Conflicting values detected, using compat='override'")
+            combined_ds = xr.merge(datasets, compat='override')
+        else:
+            raise e  # re-raise the error if it's not the specific MergeError we expect
+
     return combined_ds
 
-# function to use CDO for vertical interpolation
-def cdo_vertical_interpolation(input_file, output_file, target_plev):
-    # join the list of pressure levels into a comma-separated string
-    target_plevs_str = ','.join(map(str, target_plev))
-    command = f'cdo intlevel,{target_plevs_str} {input_file} {output_file}'
-    return os.system(command)
+# function to assign the nearest value to ta and hus values at missing plev
+def nearest_neighbour(var_data, plev):
+    var_filled = griddata(plev[np.isfinite(var_data)], var_data[np.isfinite(var_data)], plev, method="nearest", fill_value="extrapolate")
+    return var_filled
+
+# function to apply nearest neighbour interpolation to each time, lat, lon combination
+def apply_nearest_neighbour(ds, var):
+    var_filled = np.empty_like(ds[var].values)
+    for i in range(ds[var].shape[0]):  # iterate over time dimension
+        for j in range(ds[var].shape[2]):  # iterate over lat dimension
+            for k in range(ds[var].shape[3]):  # iterate over lon dimension
+                var_slice = ds[var].values[i, :, j, k]
+                var_filled[i, :, j, k] = nearest_neighbour(var_slice, ds['plev'].values)
+    return var_filled
 
 # horiztontal regridding; bilinear for continous variables and conservative for fluxes to ensure energy conservation
 def cdo_bilinear_regridding(input_file, output_file):
@@ -61,3 +92,38 @@ def cdo_conservative_regridding(input_file, output_file):
 def make_tropo(da):
     p_trop = (3e4 - 2e4 * np.cos(np.deg2rad(da.lat))).broadcast_like(da)
     return p_trop
+
+# function to perform nearest neighbour interpolation on a chunk of the dataset
+def interpolate_chunk(chunk, plev_values):
+    def interpolate(slice_values):
+        finite_indices = np.isfinite(slice_values)
+        if finite_indices.sum() > 0:  # ensure there are finite values to interpolate
+            return griddata(plev_values[finite_indices], slice_values[finite_indices], plev_values, method="nearest", fill_value="extrapolate")
+        else:
+            return slice_values  # return original values if no finite values found
+
+    # apply the interpolation function along the 'plev' axis (axis 1)
+    for t in range(chunk.shape[0]):
+        for y in range(chunk.shape[2]):
+            for x in range(chunk.shape[3]):
+                chunk[t, :, y, x] = interpolate(chunk[t, :, y, x])
+    return chunk
+
+# fucntion to apply the interpolation function to each chunk in parallel
+def apply_nearest_neighbour_parallel(ds, var):
+    var_values = ds[var].values
+    plev_values = ds['plev'].values
+
+    # specify chunk size and chunck the data
+    chunk_size = 10  
+    chunks = [var_values[i:i + chunk_size] for i in range(0, var_values.shape[0], chunk_size)]
+
+    # process each chunk in parallel to fill missing values using nearest neighbour interpolation
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = [executor.submit(interpolate_chunk, chunk, plev_values) for chunk in chunks]
+        results = [future.result() for future in concurrent.futures.as_completed(futures)] # processed data
+
+    # combine the results back into a single array
+    var_filled = np.concatenate(results, axis=0)
+    return var_filled
+
