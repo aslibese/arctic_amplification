@@ -6,7 +6,7 @@ Created on Sun Jun 2 2024
 
 This script serves to access CMIP6 data stored on Google Cloud based on the specified models and variables 
 for the historical and SSP5-8.5 experiments, concatenate them along the time axis, slice the dataset for the 1979-2023 period,
-perform vertical and horizontal regridding, and download the output as a NetCDF file. 
+perform horizontal regridding to match ERA5 kernels, and download the output as a NetCDF file. 
 
 @author: aslibese
 """
@@ -14,14 +14,17 @@ perform vertical and horizontal regridding, and download the output as a NetCDF 
 import xarray as xr
 import pandas as pd
 import os
-from CMIP6_Utilities import open_concat_datasets, cdo_vertical_interpolation, cdo_bilinear_regridding, cdo_conservative_regridding
+import sys
+import numpy as np
+import cftime
+from dask.diagnostics import ProgressBar
+from CMIP6_Utilities import open_concat_datasets, cdo_bilinear_regridding, cdo_conservative_regridding, apply_nearest_neighbour_parallel
 
 
-model = 'CanESM5'
-plev_vars = ['ta', 'hus']
-other_vars = ['tas', 'ts', 'ps','rsdt', 'rsut', 'rlut', 'rsutcs', 'rlutcs',
-              'rsds', 'rsus', 'rlus', 'rlds', 'hfls', 'hfss']
-all_vars = plev_vars + other_vars
+model = 'UKESM1-0-LL'
+ensemble = 'r1i1p1f2'
+variables = ['ta','hus','tas', 'ts', 'ps','rsdt', 'rsut', 'rlut', 'rsutcs', 'rlutcs',
+            'rsds', 'rsus', 'rlus', 'rlds', 'hfls', 'hfss']
 # tas: near-surface (2m) air temperature
 # ts: skin (surface) temperature
 # ta: air temperature at various pressure levels
@@ -41,74 +44,88 @@ all_vars = plev_vars + other_vars
 # hfls: surface upward latent heat flux
 # hfss: surface upward sensible heat flux
 
-# get plev variables
-# open and concatenate datasets for historical and ssp585 (strongest forcing) experiments 
-historical_ds_plev = open_concat_datasets(model, 'historical', 'r1i1p1f1', plev_vars)
-ssp585_ds_plev = open_concat_datasets(model, 'ssp585', 'r1i1p1f1', plev_vars)
-# concatenate historical and ssp585 along the time dimension 
-concat_ds_plev = xr.concat([historical_ds_plev, ssp585_ds_plev], dim='time')
-# select the 1979-2023 time period for our analysis
-sliced_ds_plev = concat_ds_plev.sel(time=slice('1979-01-01', '2023-12-31'))
+with ProgressBar():
+    # open and concatenate datasets for historical and ssp585 (strongest forcing) experiments 
+    historical_ds = open_concat_datasets(model, 'historical', ensemble, variables)
+    ssp585_ds = open_concat_datasets(model, 'ssp585', ensemble, variables)
+    # concatenate historical and ssp585 along the time dimension 
+    concat_ds = xr.concat([historical_ds, ssp585_ds], dim='time')
 
-# get other variables
-# open and concatenate datasets for historical and ssp585 (strongest forcing) experiments 
-historical_ds = open_concat_datasets(model, 'historical', 'r1i1p1f1', other_vars)
-ssp585_ds = open_concat_datasets(model, 'ssp585', 'r1i1p1f1', other_vars)
-# concatenate historical and ssp585 along the time dimension 
-concat_ds = xr.concat([historical_ds, ssp585_ds], dim='time')
-# select the 1979-2023 time period for our analysis
-sliced_ds = concat_ds.sel(time=slice('1979-01-01', '2023-12-31'))
+time_type = type(concat_ds['time'].values[0]) 
+start_date = '1979-01-01' 
+end_date = '2023-12-31'
 
-# extract datetime values from CFTimeIndex
-time_values = sliced_ds_plev.indexes['time'].to_datetimeindex().to_pydatetime()
-# create a pandas DateTimeIndex from the extracted datetime values
-sliced_ds_plev['time'] = pd.DatetimeIndex(time_values)
-sliced_ds['time'] = pd.DatetimeIndex(time_values)
+# handle different cftime data types e.g., CanESM5 is cftime.DatetimeNoLeap
+if time_type in [cftime.DatetimeNoLeap, cftime.Datetime360Day, cftime.DatetimeAllLeap, cftime.DatetimeGregorian, cftime.DatetimeProlepticGregorian, cftime.DatetimeJulian]:
+    # adjust end_date for cftime.Datetime360Day calendar
+    if time_type == cftime.Datetime360Day:
+        end_date = '2023-12-30'
+    sliced_ds = concat_ds.sel(time=slice(start_date, end_date))
+    # extract datetime values from CFTimeIndex
+    time_values = sliced_ds.indexes['time'].to_datetimeindex().to_pydatetime() 
+    # create a pandas DateTimeIndex from the extracted datetime values
+    sliced_ds['time'] = pd.DatetimeIndex(time_values)
 
-# target plev matched ERA5 kernels
-target_plev = [100000, 97500, 95000, 92500, 90000, 87500, 85000, 82500, 80000, 77500, 
-                75000, 70000, 65000, 60000, 55000, 50000, 45000, 40000, 35000, 30000, 
-                25000, 22500, 20000, 17500, 15000, 12500, 10000, 7000, 5000, 3000, 2000, 
-                1000, 700, 500, 300, 200, 100]
+# handle numpy datetime64 e.g., MIROC6
+elif time_type == np.datetime64:
+    start_date = pd.to_datetime(start_date) # convert string dates to pandas Timestamp
+    end_date = pd.to_datetime(end_date)
+    sliced_ds = concat_ds.sel(time=slice(start_date, end_date))
+    # extract datetime values from CFTimeIndex
+    time_values = sliced_ds.indexes['time'].to_pydatetime()
+    # create a pandas DateTimeIndex from the extracted datetime values
+    sliced_ds['time'] = pd.DatetimeIndex(time_values)
 
-# create a temporary dataset for plev with time coordinate
-temp_ds = xr.Dataset(coords={'time': sliced_ds_plev['time']})
+# handle pandas Timestamp
+elif time_type == pd.Timestamp:
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    sliced_ds = concat_ds.sel(time=slice(start_date, end_date))
+    # ensure time is in DateTimeIndex
+    if not isinstance(sliced_ds.indexes['time'], pd.DatetimeIndex):
+        sliced_ds['time'] = pd.DatetimeIndex(sliced_ds.indexes['time'])
 
-for var in plev_vars:
-    # perform vertical interpolation 
-    input_file = f'{var}_input.nc'
-    output_file = f'{var}_output.nc'
+else:
+    print(f'Error: datetime values in {model} is {time_type}.')
+    sys.exit()  # exit the code
 
-    sliced_ds_plev[var].to_netcdf(input_file)
-    cdo_vertical_interpolation(input_file, output_file, target_plev)
+# save the data before interpolation and regridding
+sliced_ds.to_netcdf(f'data/CMIP6/{model}_{ensemble}_raw.nc')
+print(f"data/CMIP6/{model}_{ensemble}_raw.nc saved successfully.\n")
 
-    interpolated_data = xr.open_dataset(output_file)[var]
-    # add the interpolated variable to the new dataset
-    temp_ds[var] = interpolated_data
-    # assign the correct plev values
-    temp_ds[var] = temp_ds[var].assign_coords(plev=target_plev)
+# fill the missing ta and hus values using the nearest neighbour interpolation method
+with ProgressBar():
+    for var in ['ta', 'hus']:
+        if np.any(np.isnan(sliced_ds[var].values)): 
+            var_filled = apply_nearest_neighbour_parallel(sliced_ds, var)
+            sliced_ds[var].values = var_filled
+            print('Interpolation step for missing {var} values completed.')
+            # check if there are any NaN values left after interpolation
+            if np.any(np.isnan(sliced_ds[var].values)): 
+                nan_indices = np.where(np.isnan(sliced_ds[var].values))
+                nan_indices_combined = list(zip(*nan_indices))
+                print(f'NaN {var} values found after interpolation: {nan_indices_combined}')
 
-    # remove the intermediate files
-    os.remove(input_file)
-    os.remove(output_file)
 
-
+# bilinear interpolation for scalar variables, conservative interpolation for fluxes 
 bilinear_var = ['tas', 'ts', 'ta', 'ps', 'hus']
 conservative_var = ['rsdt', 'rsut', 'rlut', 'rsutcs', 'rlutcs', 'rsds', 'rsus', 'rlus', 'rlds', 'hfls', 'hfss']
 
 # create a new dataset with time coordinate
 new_ds = xr.Dataset(coords={'time': sliced_ds['time']})
 
-for var in all_vars:
+# perform horizontal regridding
+for var in variables:
     # for ta and hus, perform horizontal regridding in each plev separately and then combine
     if var in ['ta', 'hus']:  
+        pressure_levels = sliced_ds[var]['plev'].values
         regridded_levels = []
-        for plev in target_plev:
+        for plev in pressure_levels:
             input_file = f'{var}_input_{plev}.nc'
             output_file = f'{var}_output_{plev}.nc'
 
             # save the variable at the specific pressure level to a NetCDF file
-            temp_ds[var].sel(plev=plev).to_netcdf(input_file)
+            sliced_ds[var].sel(plev=plev).to_netcdf(input_file)
 
             cdo_bilinear_regridding(input_file, output_file)
 
@@ -125,7 +142,7 @@ for var in all_vars:
 
         # add plev as a coordinate if not already present
         if 'plev' not in new_ds.coords:
-            new_ds = new_ds.assign_coords(plev=target_plev)
+            new_ds = new_ds.assign_coords(plev=combined_regridded['plev'])
             new_ds['plev'].attrs['standard_name'] = "air_pressure"
             new_ds['plev'].attrs['long_name'] = "Pressure Level"
             new_ds['plev'].attrs['units'] = "Pa"
@@ -159,7 +176,6 @@ for var in all_vars:
         os.remove(output_file)
 
 
-
 time = new_ds['time']
 lat = new_ds['lat']
 lon = new_ds['lon']
@@ -175,6 +191,7 @@ for var in new_ds.variables:
     if 'plev' in new_ds[var].dims:
         new_ds[var] = new_ds[var].assign_coords(plev=plev)
 
-new_ds.to_netcdf(f'data/CMIP6/{model}_regridded.nc')
+new_ds.to_netcdf(f'data/CMIP6/{model}_{ensemble}_regridded.nc')
+print(f"data/CMIP6/{model}_{ensemble}_regridded.nc saved successfully.")
 
 print(new_ds.coords)
