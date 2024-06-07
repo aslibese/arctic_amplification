@@ -21,11 +21,12 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import os
 
 # load the warming contributions dataset
-ds_path = 'data/CMIP6/MIROC6_warming_contr.nc'
+ds_path = 'data/CMIP6/CanESM5_r1i1p1f1_warming_contr.nc'
 warming_contr_ds = xr.open_dataset(ds_path)
 
-# extract model name from the path
+# extract model and ensemble name from the path
 model = os.path.basename(ds_path).split('_')[0]
+ensemble = os.path.basename(ds_path).split('_')[1]
 
 # extract the variable names 
 variables = [warming_contr_ds[var].name for var in warming_contr_ds.data_vars]
@@ -74,6 +75,6 @@ labels = np.arange(cmin, cmax + incr, incr * 2)
 cbar.set_ticks(labels)
 cbar.set_ticklabels([f"{label:.1f}" for label in labels])  
 
-fig.suptitle(f'Global Map of Warming Contributions for 1979-2023 in {model}', fontsize=26, y=0.97)
+fig.suptitle(f'Global Map of Warming Contributions for 1979-2023 in {model},{ensemble}', fontsize=26, y=0.97)
 
-plt.savefig(f'figures/{model}_map_warming_contr.png', dpi=300)
+plt.savefig(f'figures/{model}_{ensemble}_map_warming_contr.png', dpi=300)
