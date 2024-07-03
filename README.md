@@ -11,11 +11,17 @@ PolarMapMultiple.py
 fig1_obs_ts_trend_aa.py
 fig2_3_obs_multipanel.py
 
-To analyze and visualize CMIP6 data, including calculating the warming contributions of the physical mechanisms governing AA:
-FindModelsEnsembles.py
+To download and prepare CMIP6 data:
 CMIP6_Utilities.py
 DownloadRegridCMIP6.py
-CalculateFeedbacks.py
+AddVariablesCMIP6.py
+
+To download and prepare CESM2-LE data:
+Get_CESM2_LE.py
+Regrid_CESM2_LE.py
+
+To calculate feedbacks and warming contributions and plot them:
+CalculateFeedbacks_NewMethod.py
 CalculateWarmingContr.py
 PlotWarmingContr.py
 MapWarmingContr.py
